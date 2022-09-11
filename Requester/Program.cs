@@ -92,19 +92,19 @@ namespace Requester
                     switch (keyInfo.KeyChar)
                     {
                         case '1':
-                            SendRequestMessage(new RequestMessage(DateTime.Now));
+                            SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester"));
                             break;
 
                         case '2':
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now)); });
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now)); });
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now)); });
+                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
                             break;
 
                         case '3':
                             for (int i = 1; i <= 100; i++)
                             {
-                                SendRequestMessage(new RequestMessage(DateTime.Now));
+                                SendRequestMessage(new RequestMessage(DateTime.Now, requests + i, "Requester"));
                             }
                             break;
                     }

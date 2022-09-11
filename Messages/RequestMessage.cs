@@ -4,9 +4,15 @@
     {
         public DateTime SendTime { get; }
 
-        public RequestMessage(DateTime sendTime)
+        public int SequenceNumber { get; }
+
+        public string SenderName { get; }
+
+        public RequestMessage(DateTime sendTime, int sequenceNumber, string senderName)
         {
             SendTime = sendTime;
+            SequenceNumber = sequenceNumber;
+            SenderName = senderName;
         }
     }
 }

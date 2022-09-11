@@ -104,7 +104,7 @@ namespace Responder
                 string json = Encoding.UTF8.GetString(e.Body.ToArray());
                 RequestMessage? request = JsonConvert.DeserializeObject<RequestMessage>(json);
 
-                ResponseMessage response = new ResponseMessage(request!.SendTime, DateTime.Now);
+                ResponseMessage response = new ResponseMessage(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
                 json = JsonConvert.SerializeObject(response);
                 var body = Encoding.UTF8.GetBytes(json);
                 string routingKey = response.GetType().ToString();
