@@ -66,7 +66,11 @@ namespace Requester
             _consumer = new EventingBasicConsumer(_receiveChannel);
             _consumer.Received += OnMessageReceived;
 
-            string routingKey = typeof(ResponseMessage).ToString();
+            string routingKey = typeof(ResponseMessage1).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+            routingKey = typeof(ResponseMessage2).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+            routingKey = typeof(ResponseMessage3).ToString();
             _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
 
             // Start consumer
@@ -92,19 +96,19 @@ namespace Requester
                     switch (keyInfo.KeyChar)
                     {
                         case '1':
-                            SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester"));
+                            SendRequestMessage1(new RequestMessage1(DateTime.Now, requests, "Requester"));
                             break;
 
                         case '2':
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
-                            Task.Run(() => { SendRequestMessage(new RequestMessage(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => { SendRequestMessage1(new RequestMessage1(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => { SendRequestMessage2(new RequestMessage2(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => { SendRequestMessage3(new RequestMessage3(DateTime.Now, requests, "Requester")); });
                             break;
 
                         case '3':
                             for (int i = 1; i <= 100; i++)
                             {
-                                SendRequestMessage(new RequestMessage(DateTime.Now, requests + i, "Requester"));
+                                SendRequestMessage1(new RequestMessage1(DateTime.Now, requests + i, "Requester"));
                             }
                             break;
                     }
@@ -127,7 +131,52 @@ namespace Requester
             _receiveConnection?.Dispose();
         }
 
-        private static void SendRequestMessage(RequestMessage request)
+
+
+        private static void SendRequestMessage1(RequestMessage1 request)
+        {
+            Guid correlationId = Guid.NewGuid();
+            string json = JsonConvert.SerializeObject(request);
+            var body = Encoding.UTF8.GetBytes(json);
+            string routingKey = request.GetType().ToString();
+
+            IBasicProperties props = _sendChannel!.CreateBasicProperties();
+            props.ContentType = "application/json";
+            props.Type = routingKey;
+            props.CorrelationId = correlationId.ToString();
+            props.ReplyTo = QueueName;
+            props.DeliveryMode = 1;       // Non-persistent
+            props.Expiration = MessageExpirationMillisecs;
+
+            lock (_sendChannel)
+            {
+                requests++;
+                _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
+            }
+        }
+
+        private static void SendRequestMessage2(RequestMessage2 request)
+        {
+            Guid correlationId = Guid.NewGuid();
+            string json = JsonConvert.SerializeObject(request);
+            var body = Encoding.UTF8.GetBytes(json);
+            string routingKey = request.GetType().ToString();
+
+            IBasicProperties props = _sendChannel!.CreateBasicProperties();
+            props.ContentType = "application/json";
+            props.Type = routingKey;
+            props.CorrelationId = correlationId.ToString();
+            props.ReplyTo = QueueName;
+            props.DeliveryMode = 1;       // Non-persistent
+            props.Expiration = MessageExpirationMillisecs;
+
+            lock (_sendChannel)
+            {
+                requests++;
+                _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
+            }
+        }
+        private static void SendRequestMessage3(RequestMessage3 request)
         {
             Guid correlationId = Guid.NewGuid();
             string json = JsonConvert.SerializeObject(request);
@@ -152,12 +201,40 @@ namespace Requester
         private static void OnMessageReceived(object? sender, BasicDeliverEventArgs e)
         {
             DateTime receiveTime = DateTime.Now;
+            DateTime sendTime;
             replies++;
 
             string json = Encoding.UTF8.GetString(e.Body.ToArray());
-            ResponseMessage? response = JsonConvert.DeserializeObject<ResponseMessage>(json);
 
-            TimeSpan delay = receiveTime - response!.SendTime;
+            switch (e.BasicProperties.Type)
+            {
+                case "Messages.ResponseMessage1":
+                    {
+                        ResponseMessage1? response = JsonConvert.DeserializeObject<ResponseMessage1>(json);
+                        sendTime = response!.SendTime;
+                    }
+                    break;
+
+                case "Messages.ResponseMessage2":
+                    {
+                        ResponseMessage2? response = JsonConvert.DeserializeObject<ResponseMessage2>(json);
+                        sendTime = response!.SendTime;
+                    }
+                    break;
+
+                case "Messages.ResponseMessage3":
+                    {
+                        ResponseMessage3? response = JsonConvert.DeserializeObject<ResponseMessage3>(json);
+                        sendTime = response!.SendTime;
+                    }
+                    break;
+
+                default:
+                    Console.WriteLine($"Unknown type: {e.BasicProperties.Type}");
+                    return;
+            }
+
+            TimeSpan delay = receiveTime - sendTime;
             int delayMs = (int)delay.TotalMilliseconds;
 
             Console.WriteLine($"Received message. Delay: {delayMs} ms.   Requests: {requests}, replies: {replies}");

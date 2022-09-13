@@ -1,6 +1,6 @@
 ﻿namespace Messages
 {
-    public class ResponseMessage
+    public class ResponseMessage1
     {
         public DateTime SendTime { get; }
         
@@ -10,7 +10,7 @@
 
         public string SenderName { get; }
 
-        public ResponseMessage(DateTime sendTime, DateTime replyTime, int sequenceNumber, string senderName)
+        public ResponseMessage1(DateTime sendTime, DateTime replyTime, int sequenceNumber, string senderName)
         {
             SendTime = sendTime;
             ReplyTime = replyTime;

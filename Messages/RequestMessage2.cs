@@ -1,6 +1,6 @@
 ﻿namespace Messages
 {
-    public class RequestMessage
+    public class RequestMessage2
     {
         public DateTime SendTime { get; }
 
@@ -8,7 +8,7 @@
 
         public string SenderName { get; }
 
-        public RequestMessage(DateTime sendTime, int sequenceNumber, string senderName)
+        public RequestMessage2(DateTime sendTime, int sequenceNumber, string senderName)
         {
             SendTime = sendTime;
             SequenceNumber = sequenceNumber;

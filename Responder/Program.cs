@@ -67,7 +67,13 @@ namespace Responder
             _consumer = new EventingBasicConsumer(_receiveChannel);
             _consumer.Received += OnMessageReceived;
 
-            string routingKey = typeof(RequestMessage).ToString();
+            string routingKey = typeof(RequestMessage1).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+
+            routingKey = typeof(RequestMessage2).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+
+            routingKey = typeof(RequestMessage3).ToString();
             _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
 
             // Start consumer
@@ -101,13 +107,45 @@ namespace Responder
 
             Task.Run(() =>
             {
+                string routingKey;
                 string json = Encoding.UTF8.GetString(e.Body.ToArray());
-                RequestMessage? request = JsonConvert.DeserializeObject<RequestMessage>(json);
 
-                ResponseMessage response = new ResponseMessage(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
-                json = JsonConvert.SerializeObject(response);
+                switch (e.BasicProperties.Type)
+                {
+                    case "Messages.RequestMessage1":
+                        {
+                            RequestMessage1? request = JsonConvert.DeserializeObject<RequestMessage1>(json);
+                            ResponseMessage1 response = new ResponseMessage1(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
+                            json = JsonConvert.SerializeObject(response);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    case "Messages.RequestMessage2":
+                        {
+                            RequestMessage2? request = JsonConvert.DeserializeObject<RequestMessage2>(json);
+                            ResponseMessage2 response = new ResponseMessage2(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
+                            json = JsonConvert.SerializeObject(response);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    case "Messages.RequestMessage3":
+                        {
+                            RequestMessage3? request = JsonConvert.DeserializeObject<RequestMessage3>(json);
+                            ResponseMessage3 response = new ResponseMessage3(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
+                            json = JsonConvert.SerializeObject(response);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    default:
+                        Console.WriteLine($"Unknown type: {e.BasicProperties.Type}");
+                        return;
+                }
+
+
                 var body = Encoding.UTF8.GetBytes(json);
-                string routingKey = response.GetType().ToString();
 
                 IBasicProperties props = _sendChannel!.CreateBasicProperties();
                 props.Type = routingKey;
