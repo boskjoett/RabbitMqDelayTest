@@ -24,6 +24,7 @@ namespace Requester
         private static EventingBasicConsumer? _consumer;
         private static int requests;
         private static int replies;
+        private static long longestDelayMs;
 
         static void Main(string[] args)
         {
@@ -176,6 +177,7 @@ namespace Requester
                 _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
             }
         }
+
         private static void SendRequestMessage3(RequestMessage3 request)
         {
             Guid correlationId = Guid.NewGuid();
@@ -237,7 +239,12 @@ namespace Requester
             TimeSpan delay = receiveTime - sendTime;
             int delayMs = (int)delay.TotalMilliseconds;
 
-            Console.WriteLine($"Received message. Delay: {delayMs} ms.   Requests: {requests}, replies: {replies}");
+            if (delayMs > longestDelayMs)
+            {
+                longestDelayMs = delayMs;
+            }
+
+            Console.WriteLine($"Received message. Delay: {delayMs} ms. Longest delay: {longestDelayMs} ms.  Requests: {requests}, replies: {replies}");
         }
     }
 }
