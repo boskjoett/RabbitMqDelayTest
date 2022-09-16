@@ -3,13 +3,13 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client;
 using Messages;
-using System.Diagnostics.Metrics;
-using System.Reflection;
+using Messages.DataTypes;
 
 namespace Responder
 {
@@ -24,7 +24,8 @@ namespace Responder
         private static IModel? _receiveChannel;
         private static IModel? _sendChannel;
         private static EventingBasicConsumer? _consumer;
-        private static int counter;
+        private static int _counter;
+        private static JsonSerializerSettings _jsonSerializerSettings;
 
         static void Main(string[] args)
         {
@@ -35,6 +36,12 @@ namespace Responder
             IConfigurationRoot configuration = builder
                 .AddEnvironmentVariables()
                 .Build();
+
+            _jsonSerializerSettings = new JsonSerializerSettings
+            {
+                TypeNameHandling = TypeNameHandling.All,
+                MetadataPropertyHandling = MetadataPropertyHandling.ReadAhead
+            };
 
             string connectionString = configuration.GetConnectionString("RabbitMq");
             Console.WriteLine($"Connecting to RabbitMQ at {connectionString}");
@@ -67,14 +74,20 @@ namespace Responder
             _consumer = new EventingBasicConsumer(_receiveChannel);
             _consumer.Received += OnMessageReceived;
 
+            // Subscribe to message types
             string routingKey = typeof(RequestMessage1).ToString();
             _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
-
             routingKey = typeof(RequestMessage2).ToString();
             _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
-
             routingKey = typeof(RequestMessage3).ToString();
             _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+            routingKey = typeof(SubscribeToEventsRequest).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+            routingKey = typeof(GetQueuesRequest).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+            routingKey = typeof(GetAgentsRequest).ToString();
+            _receiveChannel?.QueueBind(queue: QueueName, exchange: TopicsExchangeName, routingKey: routingKey);
+
 
             // Start consumer
             _receiveChannel?.BasicConsume(queue: QueueName, autoAck: true, consumer: _consumer);
@@ -102,8 +115,8 @@ namespace Responder
 
         private static void OnMessageReceived(object? sender, BasicDeliverEventArgs e)
         {
-            counter++;
-            Console.WriteLine($"Message received ({counter})");
+            _counter++;
+            Console.WriteLine($"Message {e.BasicProperties.Type} received at {DateTime.Now} ({_counter})");
 
             Task.Run(() =>
             {
@@ -114,27 +127,54 @@ namespace Responder
                 {
                     case "Messages.RequestMessage1":
                         {
-                            RequestMessage1? request = JsonConvert.DeserializeObject<RequestMessage1>(json);
+                            RequestMessage1? request = JsonConvert.DeserializeObject<RequestMessage1>(json, _jsonSerializerSettings);
                             ResponseMessage1 response = new ResponseMessage1(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
-                            json = JsonConvert.SerializeObject(response);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
                             routingKey = response.GetType().ToString();
                         }
                         break;
 
                     case "Messages.RequestMessage2":
                         {
-                            RequestMessage2? request = JsonConvert.DeserializeObject<RequestMessage2>(json);
+                            RequestMessage2? request = JsonConvert.DeserializeObject<RequestMessage2>(json, _jsonSerializerSettings);
                             ResponseMessage2 response = new ResponseMessage2(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
-                            json = JsonConvert.SerializeObject(response);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
                             routingKey = response.GetType().ToString();
                         }
                         break;
 
                     case "Messages.RequestMessage3":
                         {
-                            RequestMessage3? request = JsonConvert.DeserializeObject<RequestMessage3>(json);
+                            RequestMessage3? request = JsonConvert.DeserializeObject<RequestMessage3>(json, _jsonSerializerSettings);
                             ResponseMessage3 response = new ResponseMessage3(request!.SendTime, DateTime.Now, request.SequenceNumber, "Responder");
-                            json = JsonConvert.SerializeObject(response);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    case "Messages.SubscribeToEventsRequest":
+                        {
+                            var request = JsonConvert.DeserializeObject<SubscribeToEventsRequest>(json, _jsonSerializerSettings);
+                            var response = new SubscribeToEventsResponse(ContactCenterResponseCode.Ok, "OK", request!.RequestMessageId);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    case "Messages.GetQueuesRequest":
+                        {
+                            var request = JsonConvert.DeserializeObject<GetQueuesRequest>(json, _jsonSerializerSettings);
+                            var response = new GetQueuesResponse(ContactCenterResponseCode.Ok, "OK", new List<Queue>(), request!.RequestMessageId);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
+                            routingKey = response.GetType().ToString();
+                        }
+                        break;
+
+                    case "Messages.GetAgentsRequest":
+                        {
+                            var request = JsonConvert.DeserializeObject<GetAgentsRequest>(json, _jsonSerializerSettings);
+                            var response = new GetAgentsResponse(ContactCenterResponseCode.Ok, "OK", new List<AgentSession>(), request!.RequestMessageId);
+                            json = JsonConvert.SerializeObject(response, _jsonSerializerSettings);
                             routingKey = response.GetType().ToString();
                         }
                         break;
@@ -144,9 +184,7 @@ namespace Responder
                         return;
                 }
 
-
                 var body = Encoding.UTF8.GetBytes(json);
-
                 IBasicProperties props = _sendChannel!.CreateBasicProperties();
                 props.Type = routingKey;
                 props.CorrelationId = e.BasicProperties.CorrelationId;

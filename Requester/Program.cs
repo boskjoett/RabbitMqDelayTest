@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client;
 using Messages;
+using Messages.DataTypes;
 
 namespace Requester
 {
@@ -22,9 +23,11 @@ namespace Requester
         private static IModel? _receiveChannel;
         private static IModel? _sendChannel;
         private static EventingBasicConsumer? _consumer;
-        private static int requests;
-        private static int replies;
-        private static long longestDelayMs;
+        private static int _requests;
+        private static int _replies;
+        private static long _longestDelayMs;
+        private static DateTime? _sendTime;
+        private static JsonSerializerSettings _jsonSerializerSettings;
 
         static void Main(string[] args)
         {
@@ -35,6 +38,12 @@ namespace Requester
             IConfigurationRoot configuration = builder
                 .AddEnvironmentVariables()
                 .Build();
+
+            _jsonSerializerSettings = new JsonSerializerSettings
+            {
+                TypeNameHandling = TypeNameHandling.All,
+                MetadataPropertyHandling = MetadataPropertyHandling.ReadAhead
+            };
 
             string connectionString = configuration.GetConnectionString("RabbitMq");
             Console.WriteLine($"Connecting to RabbitMQ at {connectionString}");
@@ -92,24 +101,38 @@ namespace Requester
                 Console.WriteLine();
                 Console.WriteLine();
 
+                _sendTime = DateTime.Now;
+
                 try
                 {
                     switch (keyInfo.KeyChar)
                     {
                         case '1':
-                            SendRequestMessage1(new RequestMessage1(DateTime.Now, requests, "Requester"));
+                            SendRequestMessage(new SubscribeToEventsRequest(new RequestingUser(Guid.NewGuid(), "agent1@zylinc.com", 
+                                new ClientInfo(Guid.NewGuid(), ClientType.Web)), SubscriptionScope.All, Guid.NewGuid(), QueueName));
                             break;
 
                         case '2':
-                            Task.Run(() => { SendRequestMessage1(new RequestMessage1(DateTime.Now, requests, "Requester")); });
-                            Task.Run(() => { SendRequestMessage2(new RequestMessage2(DateTime.Now, requests, "Requester")); });
-                            Task.Run(() => { SendRequestMessage3(new RequestMessage3(DateTime.Now, requests, "Requester")); });
+                            Task.Run(() => {
+                                SendRequestMessage(new SubscribeToEventsRequest(new RequestingUser(Guid.NewGuid(), "agent1@zylinc.com",
+                                    new ClientInfo(Guid.NewGuid(), ClientType.Web)), SubscriptionScope.All, Guid.NewGuid(), QueueName));
+                            });
+                            Task.Run(() => {
+                                SendRequestMessage(new GetQueuesRequest(new RequestingUser(Guid.NewGuid(), "agent1@zylinc.com", 
+                                    new ClientInfo(Guid.NewGuid(), ClientType.Web)), VisibilityScope.All, Guid.NewGuid(), QueueName));
+                            });
+                            Task.Run(() => {
+                                SendRequestMessage(new GetAgentsRequest(new RequestingUser(Guid.NewGuid(), "agent1@zylinc.com", 
+                                    new ClientInfo(Guid.NewGuid(), ClientType.Web)), VisibilityScope.All, Guid.NewGuid(), QueueName));
+                            });
                             break;
 
                         case '3':
                             for (int i = 1; i <= 100; i++)
                             {
-                                SendRequestMessage1(new RequestMessage1(DateTime.Now, requests + i, "Requester"));
+                                SendRequestMessage(new SubscribeToEventsRequest(new RequestingUser(Guid.NewGuid(), "agent1@zylinc.com", 
+                                    new ClientInfo(Guid.NewGuid(), ClientType.Web)),
+                                    SubscriptionScope.All, Guid.NewGuid(), QueueName));
                             }
                             break;
                     }
@@ -133,11 +156,10 @@ namespace Requester
         }
 
 
-
-        private static void SendRequestMessage1(RequestMessage1 request)
+        private static void SendRequestMessage(RequestMessageBase request)
         {
             Guid correlationId = Guid.NewGuid();
-            string json = JsonConvert.SerializeObject(request);
+            string json = JsonConvert.SerializeObject(request, _jsonSerializerSettings);
             var body = Encoding.UTF8.GetBytes(json);
             string routingKey = request.GetType().ToString();
 
@@ -151,51 +173,7 @@ namespace Requester
 
             lock (_sendChannel)
             {
-                requests++;
-                _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
-            }
-        }
-
-        private static void SendRequestMessage2(RequestMessage2 request)
-        {
-            Guid correlationId = Guid.NewGuid();
-            string json = JsonConvert.SerializeObject(request);
-            var body = Encoding.UTF8.GetBytes(json);
-            string routingKey = request.GetType().ToString();
-
-            IBasicProperties props = _sendChannel!.CreateBasicProperties();
-            props.ContentType = "application/json";
-            props.Type = routingKey;
-            props.CorrelationId = correlationId.ToString();
-            props.ReplyTo = QueueName;
-            props.DeliveryMode = 1;       // Non-persistent
-            props.Expiration = MessageExpirationMillisecs;
-
-            lock (_sendChannel)
-            {
-                requests++;
-                _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
-            }
-        }
-
-        private static void SendRequestMessage3(RequestMessage3 request)
-        {
-            Guid correlationId = Guid.NewGuid();
-            string json = JsonConvert.SerializeObject(request);
-            var body = Encoding.UTF8.GetBytes(json);
-            string routingKey = request.GetType().ToString();
-
-            IBasicProperties props = _sendChannel!.CreateBasicProperties();
-            props.ContentType = "application/json";
-            props.Type = routingKey;
-            props.CorrelationId = correlationId.ToString();
-            props.ReplyTo = QueueName;
-            props.DeliveryMode = 1;       // Non-persistent
-            props.Expiration = MessageExpirationMillisecs;
-
-            lock (_sendChannel)
-            {
-                requests++;
+                _requests++;
                 _sendChannel.BasicPublish(exchange: TopicsExchangeName, routingKey: routingKey, basicProperties: props, body: body);
             }
         }
@@ -203,8 +181,7 @@ namespace Requester
         private static void OnMessageReceived(object? sender, BasicDeliverEventArgs e)
         {
             DateTime receiveTime = DateTime.Now;
-            DateTime sendTime;
-            replies++;
+            _replies++;
 
             string json = Encoding.UTF8.GetString(e.Body.ToArray());
 
@@ -212,22 +189,40 @@ namespace Requester
             {
                 case "Messages.ResponseMessage1":
                     {
-                        ResponseMessage1? response = JsonConvert.DeserializeObject<ResponseMessage1>(json);
-                        sendTime = response!.SendTime;
+                        var response = JsonConvert.DeserializeObject<ResponseMessage1>(json, _jsonSerializerSettings);
+                        _sendTime = response!.SendTime;
                     }
                     break;
 
                 case "Messages.ResponseMessage2":
                     {
-                        ResponseMessage2? response = JsonConvert.DeserializeObject<ResponseMessage2>(json);
-                        sendTime = response!.SendTime;
+                        var response = JsonConvert.DeserializeObject<ResponseMessage2>(json, _jsonSerializerSettings);
+                        _sendTime = response!.SendTime;
                     }
                     break;
 
                 case "Messages.ResponseMessage3":
                     {
-                        ResponseMessage3? response = JsonConvert.DeserializeObject<ResponseMessage3>(json);
-                        sendTime = response!.SendTime;
+                        var response = JsonConvert.DeserializeObject<ResponseMessage3>(json, _jsonSerializerSettings);
+                        _sendTime = response!.SendTime;
+                    }
+                    break;
+
+                case "Messages.SubscribeToEventsResponse":
+                    {
+                        var response = JsonConvert.DeserializeObject<SubscribeToEventsResponse>(json, _jsonSerializerSettings);
+                    }
+                    break;
+
+                case "Messages.GetQueuesResponse":
+                    {
+                        var response = JsonConvert.DeserializeObject<GetQueuesResponse>(json, _jsonSerializerSettings);
+                    }
+                    break;
+
+                case "Messages.GetAgentsResponse":
+                    {
+                        var response = JsonConvert.DeserializeObject<GetAgentsResponse>(json, _jsonSerializerSettings);
                     }
                     break;
 
@@ -236,15 +231,15 @@ namespace Requester
                     return;
             }
 
-            TimeSpan delay = receiveTime - sendTime;
+            TimeSpan delay = receiveTime - _sendTime!.Value;
             int delayMs = (int)delay.TotalMilliseconds;
 
-            if (delayMs > longestDelayMs)
+            if (_requests > 1 && delayMs > _longestDelayMs)
             {
-                longestDelayMs = delayMs;
+                _longestDelayMs = delayMs;
             }
 
-            Console.WriteLine($"Received message. Delay: {delayMs} ms. Longest delay: {longestDelayMs} ms.  Requests: {requests}, replies: {replies}");
+            Console.WriteLine($"Received message. Delay: {delayMs} ms. Longest delay: {_longestDelayMs} ms.  Requests: {_requests}, replies: {_replies}");
         }
     }
 }
